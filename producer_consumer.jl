@@ -22,7 +22,7 @@ function producer_consumer(;
     np=1,   # number of producers
     nc=3,   # number of consumers
     nel=10, # number of elements (total)
-    verbose=true # printing?
+    verbose=true # toggle printing
 )
     N = nel ÷ np
     # produce
