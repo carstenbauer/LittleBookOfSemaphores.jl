@@ -1,191 +1,148 @@
-using Base.Threads: @sync, @spawn, nthreads, Condition
+using Base.Threads: @sync, @spawn
+using Random: shuffle!
 
-function readers_writers(;
-    nr=1, # number of readers
-    nw=1  # number of writers
-)
-    readers = 0 # how many readers are currently in the critical section ("room")
-    readers_lck = ReentrantLock()
-    room_empty = true
-    room_empty_cond = Condition() # is the room empty?
 
-    @sync begin
-        # readers
-        println("spawning readers")
-        for _ in 1:nr
-            @spawn begin
-                lock(readers_lck) do
-                    readers += 1
-                    if readers == 1
-                        # first reader marks room as non-empty or waits (and blocks all
-                        # other readers)
-                        lock(room_empty_cond) do
-                            if room_empty
-                                room_empty = false
-                            else
-                                try
-                                    while !room_empty
-                                        wait(room_empty_cond)
-                                    end
-                                finally
-                                    unlock(room_empty_cond)
-                                end
-                            end
-                        end
-                    end
-                end
+"""
+Implements the idea of categorical mutual exclusion. May be used to realize a critical
+section that may be entered either exlusively or non-exclusively
+(i.e. by two categories of tasks).
 
-                # critical section for readers
-                println("reading (current readers: $readers)")
-                sleep(1)
-
-                lock(readers_lck) do
-                    readers -= 1
-                    if readers == 0
-                        # last reader marks room as empty
-                        lock(room_empty_cond) do
-                            room_empty = true
-                            notify(room_empty_cond)
-                        end
-                    end
-                end
-            end
-        end
-        # writers
-        println("spawning writers")
-        for _ in 1:nw
-            @spawn begin
-                lock(room_empty_cond)
-                try
-                    while !room_empty
-                        wait(room_empty_cond)
-                    end
-                    room_empty = false
-                finally
-                    unlock(room_empty_cond)
-                end
-
-                # critical section for writers
-                println("writing (current readers: $readers)")
-                sleep(0.01)
-
-                lock(room_empty_cond) do
-                    room_empty = true
-                    notify(room_empty_cond)
-                end
-            end
-        end
-    end
-    nothing
-end
-
-readers_writers(; nr=1, nw=1)
-readers_writers(; nr=10, nw=2)
-readers_writers(; nr=10, nw=10)
-
-# ------------ Outsource logic to a new type
-
-mutable struct CriticalSection
+A typical example is a "readers and writers" scenario
+in which it is fine for multiple readers to concurrently access the critical section but
+writers must have exclusive access to the critical section (no other readers or writers
+may be present at the same time).
+"""
+mutable struct SimpleCategoricalCriticalSection
     free::Bool # no one in critical section?
     const free_cond::Threads.Condition
-    cnt::Int64 # number of tasks in the room
+    cnt::Int64 # number of non-exclusive tasks attempting to enter or already in the critical section
     const cnt_lck::ReentrantLock
 
-    CriticalSection() = new(true, Threads.Condition(), 0, ReentrantLock())
+    SimpleCategoricalCriticalSection() = new(true, Threads.Condition(), 0, ReentrantLock())
 end
 
-function getcount(ls::CriticalSection)
-    lock(ls.cnt_lck) do
-        ls.cnt
-    end
-end
 
-function enter_critical!(ls::CriticalSection)
-    lock(ls.cnt_lck) do
-        ls.cnt += 1
-        if ls.cnt == 1
+function enter!(cs::SimpleCategoricalCriticalSection)
+    lock(cs.cnt_lck) do
+        cs.cnt += 1
+        if cs.cnt == 1
             # first person marks the critical section as occupied
-            lock(ls.free_cond)
+            lock(cs.free_cond)
             try
-                while !ls.free
-                    wait(ls.free_cond)
+                while !cs.free
+                    wait(cs.free_cond)
                 end
-                ls.free = false
+                cs.free = false
             finally
-                unlock(ls.free_cond)
+                unlock(cs.free_cond)
             end
         end
-        ls.cnt
     end
 end
 
-function leave_critical!(ls::CriticalSection)
-    lock(ls.cnt_lck) do
-        ls.cnt -= 1
-        if ls.cnt == 0
+function leave!(cs::SimpleCategoricalCriticalSection)
+    lock(cs.cnt_lck) do
+        cs.cnt -= 1
+        if cs.cnt == 0
             # last person marks the critical section as free
-            lock(ls.free_cond) do
-                ls.free = true
-                notify(ls.free_cond)
+            lock(cs.free_cond) do
+                cs.free = true
+                notify(cs.free_cond)
             end
         end
-        ls.cnt
     end
 end
 
-function enter_critical_exclusive!(ls::CriticalSection)
-    lock(ls.free_cond)
+function enter!(f, cs::SimpleCategoricalCriticalSection)
+    enter!(cs)
     try
-        while !ls.free
-            wait(ls.free_cond)
-        end
-        ls.free = false
+        f()
     finally
-        unlock(ls.free_cond)
-    end
-    ls.cnt
-end
-
-function leave_critical_exclusive!(ls::CriticalSection)
-    lock(ls.free_cond) do
-        ls.free = true
-        c = ls.cnt
-        notify(ls.free_cond)
-        c
+        leave!(cs)
     end
 end
 
+function enter_exclusive!(cs::SimpleCategoricalCriticalSection)
+    lock(cs.free_cond)
+    try
+        while !cs.free
+            wait(cs.free_cond)
+        end
+        cs.free = false
+    finally
+        unlock(cs.free_cond)
+    end
+end
+
+function leave_exclusive!(cs::SimpleCategoricalCriticalSection)
+    lock(cs.free_cond) do
+        cs.free = true
+        notify(cs.free_cond)
+    end
+end
+
+function enter_exclusive!(f, cs::SimpleCategoricalCriticalSection)
+    enter_exclusive!(cs)
+    try
+        f()
+    finally
+        leave_exclusive!(cs)
+    end
+end
+
+
+
+
+
+# ------ Example
 
 function readers_writers_compact(;
     nr, # number of readers
     nw, # number of writers
 )
-    ls = CriticalSection()
+    spawn_order = shuffle!(vcat(fill(:reader, nr), fill(:writer, nw)))
+    cs = SimpleCategoricalCriticalSection()
     @sync begin
-        # readers
-        for _ in 1:nr
-            @spawn begin
-                cnt = enter_critical!(ls)
-                # critical section for readers
-                println("reading (num. tasks in critical: $(cnt))")
-                sleep(1)
-                leave_critical!(ls)
-            end
-        end
-        # writers
-        for _ in 1:nw
-            @spawn begin
-                cnt = enter_critical_exclusive!(ls)
-                # critical section for writers
-                println("writing (num. tasks in critical: $(cnt))")
-                sleep(0.01)
-                leave_critical_exclusive!(ls)
+        for s in spawn_order
+            if s == :reader
+                @spawn enter!(cs) do
+                    # critical section for readers
+                    println("reading")
+                    sleep(0.01)
+                end
+            else
+                @spawn enter_exclusive!(cs) do
+                    # critical section for writers
+                    println("writing")
+                    sleep(0.02)
+                end
             end
         end
     end
     nothing
 end
 
+readers_writers_compact(; nr=0, nw=10)
+readers_writers_compact(; nr=10, nw=0)
 readers_writers_compact(; nr=1, nw=1)
-readers_writers_compact(; nr=10, nw=2)
+readers_writers_compact(; nr=10, nw=1)
+readers_writers_compact(; nr=1, nw=10)
 readers_writers_compact(; nr=10, nw=10)
+
+# Note that despite the (randomly) intermingled spawn order, readers always execute as a
+# block. The reason is that there is no way for a writer task to (exclusively) access the
+# critical region while there are readers present while more readers can enter any time.
+# This could potentially lead to "starvation": If there is a infinite influx of readers,
+# writing will never happen again.
+
+
+
+
+
+# To solve the potential starvation issue above we want to add a prioritization for writers
+# to the critical section mechanism: When a writer attempts to enter the critical region,
+# only the readers that are already in the section may finish execution (all
+# following readers have to wait).
+#
+#
+# TODO
