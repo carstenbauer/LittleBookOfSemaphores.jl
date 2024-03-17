@@ -1,3 +1,7 @@
+## The book
+
+... can be found [here](https://greenteapress.com/wp/semaphores/) for free.
+
 ## General notes
 
 Julia's `Semaphore` is different from the one described in the book in that it has extra constraints:
