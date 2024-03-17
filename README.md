@@ -1,6 +1,6 @@
 ## The book
 
-... can be found [here](https://greenteapress.com/wp/semaphores/) for free.
+[The Little Book Of Semaphores](https://greenteapress.com/wp/semaphores/) is available for free in PDF form.
 
 ## General notes
 
