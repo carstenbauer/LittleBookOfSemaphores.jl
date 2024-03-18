@@ -16,3 +16,4 @@ In Julia, most of the time you don't use a `Semaphore` directly. Instead, you ca
 - `barrier.jl`: A simple barrier at which all participating tasks wait for each other before moving on.
 - `producer_consumer.jl`: Producer tasks produce elements (in parallel) and independent consumer tasks process them (in parallel). Can be used/generalized for pipelining.
 - `readers_writers.jl`: "Critical" section with categorical mutual exclusion of reader tasks (non-exclusive access) and writer tasks (exclusive access). The simpler case of a purely exclusive critical section is not covered because it can simply be realized with a lock.
+- `dining_philosophers.jl`: Avoid circular synchronization deadlock appearing in the [Dining philosophers problem](https://en.wikipedia.org/wiki/Dining_philosophers_problem) formulated by Dijkstra.
