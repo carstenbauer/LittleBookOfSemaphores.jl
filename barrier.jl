@@ -23,22 +23,22 @@ barrier = SimpleBarrier(n)
 end
 ```
 """
-struct SimpleBarrier
-    n::Int64
-    c::Threads.Condition
-    cnt::Base.RefValue{Int64}
+mutable struct SimpleBarrier
+    const n::Int64
+    const c::Threads.Condition
+    cnt::Int64
 
     function SimpleBarrier(n::Integer)
-        new(n, Threads.Condition(), Base.RefValue{Int64}(0))
+        new(n, Threads.Condition(), 0)
     end
 end
 
 function Base.wait(b::SimpleBarrier)
     lock(b.c)
     try
-        b.cnt[] += 1
-        if b.cnt[] == b.n
-            b.cnt[] = 0
+        b.cnt += 1
+        if b.cnt == b.n
+            b.cnt = 0
             notify(b.c)
         else
             wait(b.c)

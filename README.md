@@ -17,3 +17,4 @@ In Julia, most of the time you don't use a `Semaphore` directly. Instead, you ca
 - `producer_consumer.jl`: Producer tasks produce elements (in parallel) and independent consumer tasks process them (in parallel). Can be used/generalized for pipelining.
 - `readers_writers.jl`: "Critical" section with categorical mutual exclusion of reader tasks (non-exclusive access) and writer tasks (exclusive access). The simpler case of a purely exclusive critical section is not covered because it can simply be realized with a lock.
 - `dining_philosophers.jl`: Avoid circular synchronization deadlock appearing in the [Dining philosophers problem](https://en.wikipedia.org/wiki/Dining_philosophers_problem) formulated by Dijkstra.
+- `h2o.jl`: U.C. Berkeley exercise in which two kinds of tasks, hydrogen and oxygen, should pair up such that they can pass a barrier as complete H₂O molecules (2 H + 1 O → H₂O).
